@@ -167,8 +167,9 @@ Implementation spans `product-cli/cmd/fromhub/` (client) and
    `ExtraObjects` create, and delete finalizer workflow (see [API
    Extensions](#api-extensions)).
 3. **Correct from-hub client behavior** — shared GET decoder, PUT edit with
-   `resourceVersion`, single `--namespace` source of truth, no
-   `util.GetClient()` for hosting mutations (Requirements A–D).
+   `resourceVersion`, one shared `--namespace` (default `clusters`, matching
+   `hcp create cluster`), no `util.GetClient()` for hosting mutations
+   (Requirements A–D).
 
 #### Feature scope
 
@@ -360,79 +361,31 @@ HyperShift HostedClusters via the HCP proxy, not to OKE standalone deployments.
 
 ### Implementation Details/Notes/Constraints
 
-Requirements **1–10** address pitfalls from reusing `hcp create cluster` core
-code (`util.GetClient()` assumptions). Requirements **A–D** are from-hub client
-behaviors against the HCP proxy.
+The table below is the authoritative checklist. Requirements **1–10** guard
+against reusing `hcp create cluster` core code that assumes hosting-cluster
+`util.GetClient()` access. Requirements **A–D** are from-hub-specific proxy
+client behaviors. Wire contracts live in [API Extensions](#api-extensions).
 
-**Core-CLI reuse requirements (1–10):**
-
-- **Requirement 1 — `--version-check` must not use the hub HO version:** If
-  `from-hub create` calls `core.CreateCluster` without special handling, the
-  CLI commit SHA would be validated against whatever cluster
-  `util.GetClient()` resolves to — the hub, not the hosting cluster. Dev Preview
-  includes `--version-check` on the allow-list; the CLI checks hosting
-  `serverVersion` via the proxy before render ([ACM-39227](https://redhat.atlassian.net/browse/ACM-39227)).
-- **Requirement 2 — `--release-stream` must not default from hub supported
-  versions:** Release image defaulting must not read the hub's
-  `supported-versions` ConfigMap; Dev Preview includes `--release-stream` on
-  the allow-list, using hosting `supportedVersions` from the same proxy
-  endpoint ([ACM-39228](https://redhat.atlassian.net/browse/ACM-39228)).
-- **Requirement 3 — Agent API-server-address resolution:** Agent platform
-  completion must not resolve the API server address from hub nodes; default
-  to `api.<name>.<base-domain>` and require `--base-domain` on from-hub create.
-- **Requirements 4–5 — no dropped `Role`/`ConfigMap` objects:** Objects
-  rendered by a platform's `GenerateResources()` that are not
-  `HostedCluster`, `NodePool`, or `Secret` must be sent to the proxy via
-  `ExtraObjects` on create, not dropped client-side.
-- **Requirement 6 — AWS `--secret-creds` must be rejected on from-hub:**
-  Must not read secrets from the hub via `util.GetClient()`; reject via
-  `unsupportedFlags` until a proxy-backed alternative exists.
-- **Requirement 9 — core CLI argument allow-list:** `from-hub create` must
-  not register the full `hcp create cluster` flag set. Maintain an explicit
-  allow-list of supported core CLI arguments (plus from-hub-only flags). Dev
-  Preview allow-list includes `--version-check` and `--release-stream` (with
-  the version-metadata proxy endpoint). Flags such as `--wait`, `--render*`, and
-  AWS `--secret-creds` stay excluded until a later phase; any flag not on the
-  allow-list is hidden from `--help` and rejected if set.
-- **Requirement 10 — hosting existence/arch checks in render mode:** Render
-  mode must not skip validations that need hosting-cluster facts; use proxy
-  endpoints or fail closed.
-
-**From-hub client requirements (A–D):**
-
-- **Requirement A — shared GET decoder for `edit`/`delete`:** Both subcommands
-  must decode the proxy GET response the same way, including
-  `{ "hostedCluster": ... }` wrapping.
-- **Requirement B — `edit` uses PUT, not PATCH:** After the user edits the
-  YAML, `from-hub edit` must send the full updated `HostedCluster` in a PUT
-  request, including the live `metadata.resourceVersion` from the GET. Do not
-  use PATCH or partial merge semantics. Surface HTTP 409 conflicts to the user.
-- **Requirement C — single `--namespace` source of truth:** One flag binding
-  shared across all from-hub subcommands.
-- **Requirement D — `delete aws` finalizer workflow via proxy:** Reuse the
-  direct CLI delete sequence on the **hosting** cluster: add the CLI finalizer,
-  delete the `HostedCluster`, wait for other finalizers to clear, destroy AWS
-  resources, then remove the CLI finalizer. Every hosting-cluster patch/delete
-  and finalizer removal must go through the proxy — never `util.GetClient()`
-  against the hub ([ACM-39226](https://redhat.atlassian.net/browse/ACM-39226)).
-
-Summary of planned work (see [API Extensions](#api-extensions) for wire
-contracts):
+**Cross-cutting rule:** if a step needs a hosting-cluster fact or mutation, use
+the ACM `hypershift-addon-operator` proxy — never the hub kubeconfig. Before
+`core.CreateCluster` render, always force `VersionCheck=false` and clear
+`ReleaseStream`; hosting version/release checks run via the proxy when those
+flags are allow-listed.
 
 | # | Requirement | Side | Status |
 |---|-------------|------|--------|
-| 1 | `--version-check` uses hosting HO version via proxy | Client + Proxy | Dev Preview — [ACM-39227](https://redhat.atlassian.net/browse/ACM-39227) |
-| 2 | `--release-stream` defaults from hosting supported versions | Client + Proxy | Dev Preview — [ACM-39228](https://redhat.atlassian.net/browse/ACM-39228) |
-| 3 | Agent API server address from DNS default, not hub nodes | Client | Planned — require `--base-domain` on from-hub create |
-| 4 | Agent `Role` created on hosting cluster | Client + Proxy | Planned — `ExtraObjects` client + proxy apply ([ACM-39216](https://redhat.atlassian.net/browse/ACM-39216)) |
-| 5 | ConfigMaps (e.g. `--additional-trust-bundle`) created on hosting cluster | Client + Proxy | Planned — same `ExtraObjects` mechanism as #4 |
-| 6 | AWS `--secret-creds` rejected on from-hub | Client | Planned — `unsupportedFlags` on initial ship |
-| 9 | Core CLI argument allow-list (not full inherited flag set) | Client | Planned — `supportedFlags` / reject unknown inherited flags on initial ship |
-| 10 | Hosting existence/arch checks via proxy or fail closed | Client + Proxy | Planned — proxy endpoint or documented gap |
-| A | `edit`/`delete` share one GET decoder | Client | Planned |
-| B | `edit` sends PUT with full `HostedCluster` body and `resourceVersion`; 409 surfaced | Client + Proxy | Planned |
-| C | `--namespace` has single source of truth | Client | Planned |
-| D | `delete aws` CLI finalizer workflow via proxy | Client + Proxy | Dev Preview — [ACM-39226](https://redhat.atlassian.net/browse/ACM-39226) |
+| 1 | `--version-check` uses hosting `serverVersion` via proxy, not hub HO | Client + Proxy | Dev Preview — [ACM-39227](https://redhat.atlassian.net/browse/ACM-39227) |
+| 2 | `--release-stream` uses hosting `supportedVersions` via same endpoint, not hub ConfigMap | Client + Proxy | Dev Preview — [ACM-39228](https://redhat.atlassian.net/browse/ACM-39228) |
+| 3 | Agent API server defaults to `api.<name>.<base-domain>`; require `--base-domain` (not hub nodes) | Client | Planned — when `agent` platform is added |
+| 4 | Platform `Role` objects sent as `ExtraObjects`, not dropped | Client + Proxy | Dev Preview — [ACM-39216](https://redhat.atlassian.net/browse/ACM-39216) |
+| 5 | Platform `ConfigMap`s (e.g. trust bundle) sent as `ExtraObjects` | Client + Proxy | Dev Preview — same as #4 |
+| 6 | Reject AWS `--secret-creds` (must not read hub secrets via `util.GetClient()`) | Client | Dev Preview exclusion |
+| 9 | Explicit core-flag allow-list; hide/reject unknown inherited flags | Client | Dev Preview — `supportedFlags` / `unsupportedFlags` |
+| 10 | Before render, validations that need hosting-cluster state (duplicate HC name, node architectures) must use a proxy endpoint — not hub `util.GetClient()` — or the command must fail with a clear error | Client + Proxy | Planned — endpoint or documented gap |
+| A | `edit`/`delete` share one GET decoder (unwrap `{ "hostedCluster": ... }`) | Client | Planned |
+| B | `edit` sends PUT with full `HostedCluster`, `resourceVersion`, and 409 handling | Client + Proxy | Planned |
+| C | One shared `--namespace` for create/edit/delete (proxy URL + rendered manifests); default `clusters`, same as `hcp create cluster` | Client | Planned |
+| D | `delete aws`: add CLI finalizer → delete → wait → AWS cleanup → remove finalizer, all via proxy | Client + Proxy | Dev Preview — [ACM-39226](https://redhat.atlassian.net/browse/ACM-39226) |
 
 All proxy-side (`hypershift-addon-operator`) work above is tracked under the
 HCP Proxy epic [ACM-37265](https://redhat.atlassian.net/browse/ACM-37265) and
@@ -488,11 +441,10 @@ correctly.
 3. Does the HCP proxy expose PUT for `HostedCluster` update on the existing
    from-hub edit route, or does it need a new/extended route? Confirm with
    `hypershift-addon-operator` maintainers before implementation.
-4. For Requirement 10 (hosting existence/arch checks in render mode), is a
-   dedicated "does this HostedCluster already exist, and what architectures
-   do the hosting/NodePool nodes have" proxy endpoint worth adding on initial
-   ship, or is it acceptable to document as a gap (from-hub create will fail
-   server-side later if the HostedCluster already exists)?
+4. For Requirement 10 (duplicate HC name and node-architecture checks before
+   render), is a dedicated proxy endpoint worth adding on initial ship, or is
+   it acceptable to document as a gap (from-hub create will fail server-side
+   later if the HostedCluster already exists)?
 
 ## Test Plan
 
