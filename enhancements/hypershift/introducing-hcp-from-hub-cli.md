@@ -172,7 +172,7 @@ Implementation spans `product-cli/cmd/fromhub/` (client) and
    `hcp create cluster`), no `util.GetClient()` for hosting mutations
    (Requirements A–D).
 
-#### Feature scope
+### Feature scope
 
 | | From-hub (`hcp from-hub …`) | Direct (`hcp …` + hosting kubeconfig) |
 |---|-----------------------------|----------------------------------------|
