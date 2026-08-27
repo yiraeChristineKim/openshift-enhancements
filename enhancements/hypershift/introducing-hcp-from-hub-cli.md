@@ -536,13 +536,24 @@ platforms
 
 Complete when all boxes are checked and no requirements-table rows remain open.
 
-### Dev/Tech Preview -> GA
+### Dev Preview -> Tech Preview
+
+Ship `hcp from-hub` create/edit/delete for `aws` and `kubevirt` with the
+checklist above: hosting-cluster correctness through the proxy (no hub
+`util.GetClient()` fallback), ExtraObjects, version-metadata flags, delete
+finalizer sequence, client requirements A–D, allow-list enforcement, and
+unit/e2e coverage per the [Test Plan](#test-plan). User documentation lists
+supported platforms and points unsupported platforms/flags to direct `hcp`
+with hosting-cluster kubeconfig.
+
+### Tech Preview -> GA
 
 Promote when `aws` and `kubevirt` create/edit/delete work end-to-end through
-the proxy, unsupported platforms fail cleanly, Dev/Tech Preview documentation
-lists supported platforms and points others to direct `hcp`, and any
-platforms/flags added after the initial Dev/Tech Preview meet the same
-hosting-cluster correctness requirements as `aws`/`kubevirt`.
+the proxy, unsupported platforms fail cleanly, documentation lists supported
+platforms and points others to direct `hcp`, and any platforms/flags added
+after Tech Preview meet the same hosting-cluster correctness requirements as
+`aws`/`kubevirt`. GA also requires soak time with hub-operator feedback and
+CLI ↔ proxy skew coverage from the [Test Plan](#test-plan).
 
 ### Removing a deprecated feature
 
