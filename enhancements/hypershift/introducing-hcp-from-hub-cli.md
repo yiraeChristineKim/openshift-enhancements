@@ -165,8 +165,8 @@ Implementation spans `product-cli/cmd/fromhub/` (client) and
    Preview), the CLI performs hosting-cluster checks via the proxy **before**
    render instead.
 2. **Proxy for hosting facts** — new or extended HCP proxy routes for metadata,
-   `ExtraObjects` create, and delete finalizer workflow (see [API
-   Extensions](#api-extensions)).
+   create-time hosting validations, `ExtraObjects` create, and delete finalizer
+   workflow (see [API Extensions](#api-extensions)).
 3. **Correct from-hub client behavior** — shared GET decoder, PUT edit with
    `resourceVersion`, one shared `--namespace` (default `clusters`, matching
    `hcp create cluster`), no `util.GetClient()` for hosting mutations
@@ -221,11 +221,17 @@ impersonates the caller toward the hosting cluster via cluster-proxy.
 4. `--version-check` compares the CLI build identity to hosting `serverVersion`
    for **this cluster only**; `--release-stream` uses hosting
    `supportedVersions`. Mismatch or invalid stream fails before apply.
-5. `from-hub` renders manifests locally (`core.CreateCluster` in render mode,
-   `VersionCheck` forced `false`), classifies objects into `HostedCluster`,
-   `NodePools`, `Secrets`, or `ExtraObjects`, and POSTs a `CreateRequest` to
-   the proxy.
-6. The proxy creates `Secrets` → `ExtraObjects` → `HostedCluster` → `NodePool`s
+5. `from-hub` always reuses `hcp create cluster` with `--render`
+   (`core.CreateCluster` in render mode, `VersionCheck` forced `false`).
+   Render skips core's hosting-cluster `Validate()` path
+   (`validateClusterExistence`: duplicate HostedCluster name and node
+   architectures), so those checks never run against the hub via
+   `util.GetClient()`.
+6. `from-hub` classifies rendered objects into `HostedCluster`, `NodePools`,
+   `Secrets`, or `ExtraObjects`, and POSTs a `CreateRequest` to the proxy.
+   The HCP proxy validates the hosting cluster (duplicate HostedCluster name,
+   node architectures) via its validation endpoint before apply.
+7. The proxy creates `Secrets` → `ExtraObjects` → `HostedCluster` → `NodePool`s
    on the hosting cluster, stamping `hcp.ocm.io/*` labels.
 
 #### Edit (target behavior)
@@ -314,7 +320,15 @@ It does extend the **ACM `hypershift-addon-operator` HCP proxy** (API group
      a different namespace before processing. Do not accept arbitrary
      `RawExtension` payloads based on impersonated RBAC alone.
 
-3. **Proxy-backed `from-hub delete` operations** (same sequence as [Delete (target
+3. A hosting-cluster **create validation** endpoint (exact HTTP route TBD with
+   `hypershift-addon-operator`, tracked in
+   [ACM-42875](https://redhat.atlassian.net/browse/ACM-42875)). `from-hub`
+   always renders with `core.CreateCluster` `--render`, which skips core's
+   `validateClusterExistence` (duplicate HostedCluster name and node
+   architectures). The proxy runs those equivalent checks against the hosting
+   cluster before apply and returns a clear error on conflict or architecture
+   mismatch.
+4. **Proxy-backed `from-hub delete` operations** (same sequence as [Delete (target
    behavior)](#delete-target-behavior); exact HTTP routes TBD with
    `hypershift-addon-operator`, tracked in
    [ACM-39226](https://redhat.atlassian.net/browse/ACM-39226)):
@@ -383,7 +397,7 @@ flags are allow-listed.
 | 4 | Platform `ConfigMap`s (e.g. trust bundle) sent as `ExtraObjects` | Client + Proxy | Dev/Tech Preview — same as #3 |
 | 5 | Reject AWS `--secret-creds` (must not read hub secrets via `util.GetClient()`) | Client | Dev/Tech Preview — excluded (no proxy alternative yet) |
 | 6 | Explicit core-flag allow-list; hide/reject unknown inherited flags | Client | Dev/Tech Preview — `supportedFlags` / `unsupportedFlags` |
-| 7 | Before render, validations that need hosting-cluster state (duplicate HC name, node architectures) must use a proxy endpoint — not hub `util.GetClient()` — or the command must fail with a clear error | Client (+ Proxy if endpoint added) | Planned — endpoint or documented gap |
+| 7 | `from-hub` always reuses `hcp create cluster` with `--render`, so core skips hosting-state validations (duplicate HC name, node architectures) and never calls hub `util.GetClient()`. The HCP proxy runs those validations against the hosting cluster via a dedicated endpoint before apply | Client + Proxy | Planned — [ACM-42875](https://redhat.atlassian.net/browse/ACM-42875) |
 | A | `edit`/`delete` share one GET decoder (unwrap `{ "hostedCluster": ... }`) | Client | Planned |
 | B | `edit` sends PUT with full `HostedCluster`, `resourceVersion`, and 409 handling | Client + Proxy | Planned |
 | C | One shared `--namespace` for create/edit/delete (proxy URL + rendered manifests); default `clusters`, same as `hcp create cluster` | Client | Planned |
@@ -449,10 +463,6 @@ correctly.
 3. Does the HCP proxy expose PUT for `HostedCluster` update on the existing
    from-hub edit route, or does it need a new/extended route? Confirm with
    `hypershift-addon-operator` maintainers before implementation.
-4. For Requirement 7 (duplicate HC name and node-architecture checks before
-   render), is a dedicated proxy endpoint worth adding on initial ship, or is
-   it acceptable to document as a gap (from-hub create will fail server-side
-   later if the HostedCluster already exists)?
 
 ## Test Plan
 
@@ -464,7 +474,9 @@ correctly.
   through the version-metadata proxy endpoint and fail clearly when the proxy
   is unavailable; verify `coreOpts.VersionCheck` and `coreOpts.ReleaseStream`
   are always forced to their disabled values before `core.CreateCluster` is
-  invoked so core never checks the hub.
+  invoked so core never checks the hub; verify create always sets `--render`
+  so core's `validateClusterExistence` (duplicate name, node architectures)
+  is skipped on the client (Requirement 7).
 - New tests for `buildRequestFromFile`/`stampFromHubLabels` verifying that
   an unrecognized `Kind` (e.g. `Role`, `ConfigMap`, a hypothetical future
   `RoleBinding`) is appended to `CreateRequest.ExtraObjects` with the
@@ -494,6 +506,9 @@ correctly.
   cluster running a HyperShift Operator version deliberately mismatched from
   the CLI, verifying the command fails with the hosting-cluster version in
   the error message (not the hub's).
+- An e2e test that creating a HostedCluster whose name already exists on the
+  hosting cluster fails via the HCP proxy validation endpoint (Requirement 7),
+  not via hub `util.GetClient()`.
 - An e2e test for `hcp from-hub edit` changing a field (e.g. adding an entry to
   `spec.services`) end-to-end, verifying the hosting cluster's `HostedCluster`
   matches the YAML the operator saved.
