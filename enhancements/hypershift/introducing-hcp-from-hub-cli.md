@@ -3,30 +3,30 @@ title: introducing-hcp-from-hub-cli
 authors:
   - "@yiraeChristineKim"
 reviewers:
-  - "@csrwng, HyperShift CLI and product-cli core paths (OWNERS core-approvers)"
-  - "@enxebre, HyperShift / product-cli (OWNERS core-approvers)"
-  - "@sjenning, HyperShift / product-cli (OWNERS core-approvers)"
-  - "@muraee, product-cli (OWNERS core-reviewers)"
-  - "@bryan-cox, product-cli (OWNERS core-reviewers)"
-  - "@cblecker, product-cli (OWNERS core-reviewers)"
-  - "@jparrill, product-cli (OWNERS core-reviewers)"
-  - "@devguyio, product-cli (OWNERS core-approvers / core-reviewers)"
-  - "@sdminonne, product-cli (OWNERS core-reviewers)"
-  - "@clebs, product-cli (OWNERS core-reviewers)"
-  - "@Nirshal, product-cli (OWNERS core-reviewers)"
-  - "@ironcladlou, product-cli (OWNERS core-reviewers)"
-  - "@nunnatsa, kubevirt platform (OWNERS kubevirt-reviewers; Dev Preview platform)"
-  - "@orenc1, kubevirt platform (OWNERS kubevirt-reviewers; Dev Preview platform)"
-  - "@awels, kubevirt platform (OWNERS kubevirt-reviewers; Dev Preview platform)"
-  - "@akalenyu, kubevirt platform (OWNERS kubevirt-reviewers; Dev Preview platform)"
-  - "@qinqon, kubevirt platform (OWNERS kubevirt-reviewers; Dev Preview platform)"
-  - TBD, hypershift-addon-operator / HCP proxy (ACM/MCE) expertise
+  - "@csrwng"     # HyperShift CLI / product-cli core (OWNERS core-approvers)
+  - "@enxebre"    # HyperShift / product-cli (OWNERS core-approvers)
+  - "@sjenning"   # HyperShift / product-cli (OWNERS core-approvers)
+  - "@muraee"     # product-cli (OWNERS core-reviewers)
+  - "@bryan-cox"  # product-cli (OWNERS core-reviewers)
+  - "@cblecker"   # product-cli (OWNERS core-reviewers)
+  - "@jparrill"   # product-cli (OWNERS core-reviewers)
+  - "@devguyio"   # product-cli (OWNERS core-approvers / core-reviewers)
+  - "@sdminonne"  # product-cli (OWNERS core-reviewers)
+  - "@clebs"      # product-cli (OWNERS core-reviewers)
+  - "@Nirshal"    # product-cli (OWNERS core-reviewers)
+  - "@ironcladlou" # product-cli (OWNERS core-reviewers)
+  - "@nunnatsa"   # kubevirt platform (OWNERS kubevirt-reviewers; Dev/Tech Preview platform)
+  - "@orenc1"     # kubevirt platform (OWNERS kubevirt-reviewers; Dev/Tech Preview platform)
+  - "@awels"      # kubevirt platform (OWNERS kubevirt-reviewers; Dev/Tech Preview platform)
+  - "@akalenyu"   # kubevirt platform (OWNERS kubevirt-reviewers; Dev/Tech Preview platform)
+  - "@qinqon"     # kubevirt platform (OWNERS kubevirt-reviewers; Dev/Tech Preview platform)
+  # TODO: add an ACM/MCE hypershift-addon-operator / HCP-proxy reviewer
 approvers:
   - "@csrwng"
 api-approvers:
   - None
 creation-date: 2026-07-31
-last-updated: 2026-08-26
+last-updated: 2026-08-27
 status: provisional
 tracking-link:
   - https://redhat.atlassian.net/browse/ACM-37265
@@ -58,7 +58,7 @@ broken edit/delete decoding).
 everything else is rejected until a proxy-backed implementation exists. Users who
 need capabilities outside that set use `hcp` with a hosting-cluster kubeconfig.
 
-**Dev Preview:** **`aws` and `kubevirt` only**, plus the hosting-cluster
+**Dev/Tech Preview:** **`aws` and `kubevirt` only**, plus the hosting-cluster
 **version-metadata proxy endpoint** and allow-listed **`--version-check`** /
 **`--release-stream`** ([ACM-39227](https://redhat.atlassian.net/browse/ACM-39227),
 [ACM-39228](https://redhat.atlassian.net/browse/ACM-39228)). Flags such as
@@ -91,7 +91,7 @@ first ship **fails closed** rather than silently wrong.
   successful create does not silently produce a `HostedCluster` the hosting
   cluster's operator cannot reconcile.
 * As a cluster administrator using `hcp from-hub create aws` or
-  `hcp from-hub create kubevirt` (Dev Preview platforms), I want the
+  `hcp from-hub create kubevirt` (Dev/Tech Preview platforms), I want the
   RBAC `Role` and any `ConfigMap`s (e.g. `--additional-trust-bundle`) that my
   `HostedCluster` references to actually exist on the hosting cluster after
   create, so that the HostedCluster does not get stuck reconciling against
@@ -113,7 +113,8 @@ first ship **fails closed** rather than silently wrong.
 1. If `from-hub` needs a fact about the **hosting** cluster, get it through the
    HCP proxy or return a clear error — never read it from the hub kubeconfig
    via `util.GetClient()` / `util.GetConfig()`.
-2. Every object a platform's `GenerateResources()` renders (not just
+2. For Dev/Tech Preview platforms (`aws`, `kubevirt`), every object a
+   platform's `GenerateResources()` renders (not just
    `HostedCluster`/`NodePool`/`Secret`) is created on the hosting cluster
    through the proxy.
 3. **`from-hub` exposes an allow-list of core CLI arguments only.** It reuses
@@ -140,7 +141,7 @@ first ship **fails closed** rather than silently wrong.
 
 1. Full parity with `hcp create cluster` over the hub/proxy path (see Goals 6).
 2. Redesigning the HCP proxy auth model (`managedcluster:admin`, impersonation).
-3. Dev Preview platforms beyond **`aws` and `kubevirt`**, or GitOps / declarative
+3. Dev/Tech Preview platforms beyond **`aws` and `kubevirt`**, or GitOps / declarative
    reconciliation as a first-class workflow (imperative CLI only for initial ship).
 4. Changing the direct `hcp create cluster` flow (`util.GetClient()` remains
    correct there).
@@ -158,11 +159,11 @@ Implementation spans `product-cli/cmd/fromhub/` (client) and
 `hypershift-addon-operator` / `hcp_proxy.go` (server). Three principles:
 
 1. **Fail closed** — explicit core-flag **allow-list**; reject unknown inherited
-   flags (see Requirement 9). Before `core.CreateCluster` render, always force
+   flags (see Requirement 6). Before `core.CreateCluster` render, always force
    `VersionCheck=false` and clear `ReleaseStream` so core never reads the hub;
-   when `--version-check` / `--release-stream` are allow-listed (Dev Preview),
-   the CLI performs hosting-cluster checks via the proxy **before** render
-   instead.
+   when `--version-check` / `--release-stream` are allow-listed (Dev/Tech
+   Preview), the CLI performs hosting-cluster checks via the proxy **before**
+   render instead.
 2. **Proxy for hosting facts** — new or extended HCP proxy routes for metadata,
    `ExtraObjects` create, and delete finalizer workflow (see [API
    Extensions](#api-extensions)).
@@ -175,24 +176,26 @@ Implementation spans `product-cli/cmd/fromhub/` (client) and
 
 | | From-hub (`hcp from-hub …`) | Direct (`hcp …` + hosting kubeconfig) |
 |---|-----------------------------|----------------------------------------|
-| **Operations** | Create, edit, delete via proxy. **Dev Preview:** `aws`, `kubevirt` | Full platform and flag support |
+| **Operations** | Create, edit, delete via proxy. **Dev/Tech Preview:** `aws`, `kubevirt` | Full platform and flag support |
 | **Flags** | Explicit **allow-list** + `--hosting-cluster` | Full `hcp create cluster` set |
 | **Hosting cluster** | All reads/writes through **proxy** — never silently the hub | Direct apiserver access |
 
-**Dev Preview allow-list — version metadata:** `--version-check` and
-`--release-stream` are **in scope for Dev Preview**. They route through the
-[version-metadata proxy endpoint](#api-extensions) (shipped with Dev Preview in
-`hypershift-addon-operator`), not through core's hub `util.GetClient()` path:
+**Dev/Tech Preview allow-list — version metadata:** `--version-check` and
+`--release-stream` are **in scope for Dev/Tech Preview**. They route through
+the [version-metadata proxy endpoint](#api-extensions) (shipped with Dev/Tech
+Preview in `hypershift-addon-operator`), not through core's hub
+`util.GetClient()` path:
 
-| Flag | Hosting-cluster fact (via proxy) | Dev Preview work |
+| Flag | Hosting-cluster fact (via proxy) | Dev/Tech Preview work |
 |------|----------------------------------|------------------|
 | `--version-check` | `serverVersion` — CLI build vs hosting HO | [ACM-39227](https://redhat.atlassian.net/browse/ACM-39227) |
 | `--release-stream` | `supportedVersions` — OCP release default/validation | [ACM-39228](https://redhat.atlassian.net/browse/ACM-39228) |
 
-**Post–Dev Preview exclusions:** `--wait`, `--render*`, and AWS `--secret-creds`
-stay off the allow-list until a hosting-cluster-correct implementation exists
-(hidden from `--help`, clear error if set). The allow-list grows gradually;
-from-hub is not expected to expose the full direct `hcp create cluster` surface.
+**Post–Dev/Tech Preview exclusions:** `--wait`, `--render*`, and AWS
+`--secret-creds` stay off the allow-list until a hosting-cluster-correct
+implementation exists (hidden from `--help`, clear error if set). The
+allow-list grows gradually; from-hub is not expected to expose the full
+direct `hcp create cluster` surface.
 
 ### Workflow Description
 
@@ -207,10 +210,10 @@ impersonates the caller toward the hosting cluster via cluster-proxy.
 #### Create (target behavior)
 
 1. The hub operator runs `hcp from-hub create aws --hosting-cluster
-   <name> ...` (Dev Preview also supports `kubevirt`; other platforms are
+   <name> ...` (Dev/Tech Preview also supports `kubevirt`; other platforms are
    rejected until a later phase).
 2. When `--version-check` or `--release-stream` is set, the CLI calls the
-   Dev Preview [version-metadata proxy endpoint](#api-extensions) for
+   Dev/Tech Preview [version-metadata proxy endpoint](#api-extensions) for
    `--hosting-cluster`. The CLI never runs core's hub `validateVersion()` or
    hub `supported-versions` defaulting.
 3. The proxy enforces `managedcluster:admin` and impersonates toward the
@@ -248,7 +251,7 @@ Matches the existing `hcp delete aws` sequencing, with all hosting-cluster
 mutations through the proxy (not `util.GetClient()` on the hub):
 
 1. The hub operator runs `hcp from-hub delete my-cluster --hosting-cluster
-   <name>` (Dev Preview: `aws` or `kubevirt`; AWS steps below describe the
+   <name>` (Dev/Tech Preview: `aws` or `kubevirt`; AWS steps below describe the
    cloud-resource cleanup path).
 2. `from-hub delete` GETs the `HostedCluster` from the proxy (same shared GET
    decoder as edit).
@@ -361,7 +364,7 @@ HyperShift HostedClusters via the HCP proxy, not to OKE standalone deployments.
 
 ### Implementation Details/Notes/Constraints
 
-The table below is the authoritative checklist. Requirements **1–10** guard
+The table below is the authoritative checklist. Requirements **1–7** guard
 against reusing `hcp create cluster` core code that assumes hosting-cluster
 `util.GetClient()` access. Requirements **A–D** are from-hub-specific proxy
 client behaviors. Wire contracts live in [API Extensions](#api-extensions).
@@ -374,18 +377,23 @@ flags are allow-listed.
 
 | # | Requirement | Side | Status |
 |---|-------------|------|--------|
-| 1 | `--version-check` uses hosting `serverVersion` via proxy, not hub HO | Client + Proxy | Dev Preview — [ACM-39227](https://redhat.atlassian.net/browse/ACM-39227) |
-| 2 | `--release-stream` uses hosting `supportedVersions` via same endpoint, not hub ConfigMap | Client + Proxy | Dev Preview — [ACM-39228](https://redhat.atlassian.net/browse/ACM-39228) |
-| 3 | Agent API server defaults to `api.<name>.<base-domain>`; require `--base-domain` (not hub nodes) | Client | Planned — when `agent` platform is added |
-| 4 | Platform `Role` objects sent as `ExtraObjects`, not dropped | Client + Proxy | Dev Preview — [ACM-39216](https://redhat.atlassian.net/browse/ACM-39216) |
-| 5 | Platform `ConfigMap`s (e.g. trust bundle) sent as `ExtraObjects` | Client + Proxy | Dev Preview — same as #4 |
-| 6 | Reject AWS `--secret-creds` (must not read hub secrets via `util.GetClient()`) | Client | Dev Preview exclusion |
-| 9 | Explicit core-flag allow-list; hide/reject unknown inherited flags | Client | Dev Preview — `supportedFlags` / `unsupportedFlags` |
-| 10 | Before render, validations that need hosting-cluster state (duplicate HC name, node architectures) must use a proxy endpoint — not hub `util.GetClient()` — or the command must fail with a clear error | Client + Proxy | Planned — endpoint or documented gap |
+| 1 | `--version-check` uses hosting `serverVersion` via proxy, not hub HO | Client + Proxy | Dev/Tech Preview — [ACM-39227](https://redhat.atlassian.net/browse/ACM-39227) |
+| 2 | `--release-stream` uses hosting `supportedVersions` via same endpoint, not hub ConfigMap | Client + Proxy | Dev/Tech Preview — [ACM-39228](https://redhat.atlassian.net/browse/ACM-39228) |
+| 3 | Platform `Role` objects sent as `ExtraObjects`, not dropped | Client + Proxy | Dev/Tech Preview — [ACM-39216](https://redhat.atlassian.net/browse/ACM-39216) |
+| 4 | Platform `ConfigMap`s (e.g. trust bundle) sent as `ExtraObjects` | Client + Proxy | Dev/Tech Preview — same as #3 |
+| 5 | Reject AWS `--secret-creds` (must not read hub secrets via `util.GetClient()`) | Client | Dev/Tech Preview — excluded (no proxy alternative yet) |
+| 6 | Explicit core-flag allow-list; hide/reject unknown inherited flags | Client | Dev/Tech Preview — `supportedFlags` / `unsupportedFlags` |
+| 7 | Before render, validations that need hosting-cluster state (duplicate HC name, node architectures) must use a proxy endpoint — not hub `util.GetClient()` — or the command must fail with a clear error | Client (+ Proxy if endpoint added) | Planned — endpoint or documented gap |
 | A | `edit`/`delete` share one GET decoder (unwrap `{ "hostedCluster": ... }`) | Client | Planned |
 | B | `edit` sends PUT with full `HostedCluster`, `resourceVersion`, and 409 handling | Client + Proxy | Planned |
 | C | One shared `--namespace` for create/edit/delete (proxy URL + rendered manifests); default `clusters`, same as `hcp create cluster` | Client | Planned |
-| D | `delete aws`: add CLI finalizer → delete → wait → AWS cleanup → remove finalizer, all via proxy | Client + Proxy | Dev Preview — [ACM-39226](https://redhat.atlassian.net/browse/ACM-39226) |
+| D | `delete aws`: add CLI finalizer → delete → wait → AWS cleanup → remove finalizer, all via proxy | Client + Proxy | Dev/Tech Preview — [ACM-39226](https://redhat.atlassian.net/browse/ACM-39226) |
+
+**Future platform note:** Agent-platform API-server-address resolution
+(default to `api.<name>.<base-domain>`, require `--base-domain`, never resolve
+from hub nodes) is not a numbered requirement here because `agent` is out of
+scope for this enhancement's Dev/Tech Preview (see Non-Goal 3). Track it as a
+new numbered requirement when `agent` is added to `from-hub`.
 
 All proxy-side (`hypershift-addon-operator`) work above is tracked under the
 HCP Proxy epic [ACM-37265](https://redhat.atlassian.net/browse/ACM-37265) and
@@ -399,7 +407,7 @@ extension of the existing proxy contract.
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| A hosting-cluster metadata endpoint is unavailable at runtime | `--version-check` / `--release-stream` must fail the command with a clear proxy error; must not fall back to the hub | Client always forces `VersionCheck=false`/clears `ReleaseStream` before `core.CreateCluster`; hosting checks run only via the Dev Preview proxy endpoint |
+| A hosting-cluster metadata endpoint is unavailable at runtime | `--version-check` / `--release-stream` must fail the command with a clear proxy error; must not fall back to the hub | Client always forces `VersionCheck=false`/clears `ReleaseStream` before `core.CreateCluster`; hosting checks run only via the Dev/Tech Preview proxy endpoint |
 | New `ExtraObjects` passthrough lets the proxy create arbitrary object kinds on the hosting cluster | Expands the proxy's effective write surface beyond `HostedCluster`/`NodePool`/`Secret` | Proxy validates `ExtraObjects` with a strict GVK allow-list, namespace equality with the request, and rejection of cluster-scoped or cross-namespace objects before any apply |
 
 ### Drawbacks
@@ -435,13 +443,13 @@ correctly.
    decide, but affects the exact client call sites in
    `product-cli/cmd/fromhub/client.go`.
 2. Which additional `GroupVersionKind`s belong on the initial `ExtraObjects`
-   allow-list beyond `Role`, `RoleBinding`, and `ConfigMap` for Dev Preview
+   allow-list beyond `Role`, `RoleBinding`, and `ConfigMap` for Dev/Tech Preview
    `aws`/`kubevirt`? New kinds require an explicit proxy allow-list update —
    there is no generic "RBAC-checked apply any object" mode.
 3. Does the HCP proxy expose PUT for `HostedCluster` update on the existing
    from-hub edit route, or does it need a new/extended route? Confirm with
    `hypershift-addon-operator` maintainers before implementation.
-4. For Requirement 10 (duplicate HC name and node-architecture checks before
+4. For Requirement 7 (duplicate HC name and node-architecture checks before
    render), is a dedicated proxy endpoint worth adding on initial ship, or is
    it acceptable to document as a gap (from-hub create will fail server-side
    later if the HostedCluster already exists)?
@@ -508,7 +516,8 @@ endpoints is itself part of the implementation work.
 ## Graduation Criteria
 
 `hcp from-hub` graduation tracks delivery of the [requirements
-table](#implementation-detailsnotesconstraints) for **Dev Preview platforms
+table](#implementation-detailsnotesconstraints) for **Dev/Tech Preview
+platforms
 (`aws`, `kubevirt`)**:
 
 - [ ] Subcommand shipped: create, edit, delete for `aws` and `kubevirt` only
@@ -527,26 +536,22 @@ table](#implementation-detailsnotesconstraints) for **Dev Preview platforms
 
 Complete when all boxes are checked and no requirements-table rows remain open.
 
-### Dev Preview -> Tech Preview
+### Dev/Tech Preview -> GA
 
 Promote when `aws` and `kubevirt` create/edit/delete work end-to-end through
-the proxy, unsupported platforms fail cleanly, and Dev Preview documentation
-lists supported platforms and points others to direct `hcp`.
-
-### Tech Preview -> GA
-
-Promote when Tech Preview criteria are met, tests cover `aws`/`kubevirt`
-flows, and any post-Dev-Preview platforms/flags meet the same hosting-cluster
-correctness requirements.
+the proxy, unsupported platforms fail cleanly, Dev/Tech Preview documentation
+lists supported platforms and points others to direct `hcp`, and any
+platforms/flags added after the initial Dev/Tech Preview meet the same
+hosting-cluster correctness requirements as `aws`/`kubevirt`.
 
 ### Removing a deprecated feature
 
 Not applicable on initial introduction. Flags excluded from the from-hub
-allow-list for Dev Preview (`--wait`, `--timeout`, `--render*`, AWS
+allow-list for Dev/Tech Preview (`--wait`, `--timeout`, `--render*`, AWS
 `--secret-creds`) remain part of `hcp create cluster`'s flag set — they are
 only hidden and rejected on the `from-hub` subcommand, not deprecated
 platform-wide. `--version-check` and `--release-stream` are allow-listed in
-Dev Preview via the version-metadata proxy endpoint.
+Dev/Tech Preview via the version-metadata proxy endpoint.
 
 ## Upgrade / Downgrade Strategy
 
